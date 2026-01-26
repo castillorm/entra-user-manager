@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="entra-user-manager" default="help" basedir=".">
+
+    <!-- ====== Configurable properties ====== -->
+    <property file="build.properties"/>
+    <property name="src.dir"     value="src/main/java"/>
+    <property name="build.dir"   value="build"/>
+    <property name="classes.dir" value="${build.dir}/classes"/>
+    <property name="dist.dir"    value="${build.dir}/dist"/>
+    <property name="libs.dir"    value="libs"/>
+
+    <!-- Main class + config path (overridable in build.properties or -D...) -->
+    <property name="main.class"  value="com.yourorg.entra.Main"/>
+    <property name="ini.path"    value="config/entra.ini"/>
+
+    <!-- ====== Classpath from offline jars ====== -->
+    <path id="compile.classpath">
+        <fileset dir="${libs.dir}" includes="**/*.jar"/>
+    </path>
+
+    <!-- ====== Targets ====== -->
+    <target name="help">
+        <echo>
+Targets:
+  ant clean            - Delete build outputs
+  ant compile          - Compile Java sources
+  ant run              - Run Main (uses -Dini.path=... or build.properties)
+  ant jar              - Create runnable jar (no dependency jars inside)
+  ant run-jar          - Run using jar + libs/*
+Examples:
+  ant compile
+  ant run -Dini.path=config/entra.ini
+  ant jar
+  ant run-jar -Dini.path=config/entra.ini
+        </echo>
+    </target>
+
+    <target name="clean">
+        <delete dir="${build.dir}"/>
+    </target>
+
+    <target name="init">
+        <mkdir dir="${classes.dir}"/>
+        <mkdir dir="${dist.dir}"/>
+    </target>
+
+    <target name="compile" depends="init">
+        <javac
+            srcdir="${src.dir}"
+            destdir="${classes.dir}"
+            includeantruntime="false"
+            debug="true">
+            <classpath refid="compile.classpath"/>
+        </javac>
+    </target>
+
+    <!-- Run compiled classes directly -->
+    <target name="run" depends="compile">
+        <java classname="${main.class}" fork="true" failonerror="true">
+            <classpath>
+                <pathelement path="${classes.dir}"/>
+                <path refid="compile.classpath"/>
+            </classpath>
+            <arg value="${ini.path}"/>
+        </java>
+    </target>
+
+    <!-- Package your compiled output into a runnable jar (no dependencies bundled) -->
+    <target name="jar" depends="compile">
+        <jar destfile="${dist.dir}/entra-user-manager.jar" basedir="${classes.dir}">
+            <manifest>
+                <attribute name="Main-Class" value="${main.class}"/>
+                <!-- Class-Path here is optional; we typically run with -cp libs/* -->
+            </manifest>
+        </jar>
+        <echo>Created ${dist.dir}/entra-user-manager.jar</echo>
+    </target>
+
+    <!-- Run the jar with dependency jars from libs/ -->
+    <target name="run-jar" depends="jar">
+        <java jar="${dist.dir}/entra-user-manager.jar" fork="true" failonerror="true">
+            <classpath>
+                <fileset dir="${libs.dir}" includes="**/*.jar"/>
+            </classpath>
+            <arg value="${ini.path}"/>
+        </java>
+    </target>
+
+</project>
