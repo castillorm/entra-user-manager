@@ -1,6 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="
+           http://maven.apache.org/POM/4.0.0
+           https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>com.keyesit</groupId>
@@ -8,23 +12,32 @@
   <version>1.0.0</version>
   <name>msgraph-cli</name>
 
+  <!-- ===================================================== -->
+  <!-- Properties                                            -->
+  <!-- ===================================================== -->
   <properties>
     <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-    <!-- Verified on Maven Central -->
+    <!-- Dependencies -->
     <msgraph.version>6.60.0</msgraph.version>
-    <!-- Pick a recent Azure Identity (can be bumped as needed) -->
     <azure.identity.version>1.16.3</azure.identity.version>
+    <junit.jupiter.version>5.11.4</junit.jupiter.version>
   </properties>
 
+  <!-- ===================================================== -->
+  <!-- Dependencies                                          -->
+  <!-- ===================================================== -->
   <dependencies>
+
+    <!-- Microsoft Graph SDK -->
     <dependency>
       <groupId>com.microsoft.graph</groupId>
       <artifactId>microsoft-graph</artifactId>
       <version>${msgraph.version}</version>
     </dependency>
 
+    <!-- Azure Identity -->
     <dependency>
       <groupId>com.azure</groupId>
       <artifactId>azure-identity</artifactId>
@@ -38,11 +51,40 @@
       <version>1.5.16</version>
     </dependency>
 
+    <!-- Testing: JUnit 5 -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.jupiter.version}</version>
+      <scope>test</scope>
+    </dependency>
+
   </dependencies>
 
+  <!-- ===================================================== -->
+  <!-- Build                                                  -->
+  <!-- ===================================================== -->
   <build>
     <plugins>
-      <!-- Run main class via: mvn -q exec:java -->
+
+      <!-- Compile with Java 17 -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <release>${maven.compiler.release}</release>
+        </configuration>
+      </plugin>
+
+      <!-- Run unit tests (JUnit 5) -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.2</version>
+      </plugin>
+
+      <!-- Run the application -->
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
@@ -51,7 +93,9 @@
           <mainClass>com.keyesit.graphcli.GraphCli</mainClass>
         </configuration>
       </plugin>
+
     </plugins>
   </build>
+
 </project>
 

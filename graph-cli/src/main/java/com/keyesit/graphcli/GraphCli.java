@@ -2,201 +2,188 @@ package com.keyesit.graphcli;
 
 import com.azure.identity.ClientSecretCredential;
 import com.azure.identity.ClientSecretCredentialBuilder;
-
-import com.microsoft.graph.models.Invitation;
-import com.microsoft.graph.models.User;
 import com.microsoft.graph.serviceclient.GraphServiceClient;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Objects;
 
 public class GraphCli {
 
-    private static final Logger log = LoggerFactory.getLogger(GraphCli.class);
+  private static Logger log;
 
-    public static void main(String[] args) throws Exception {
-        Path projectDir = Path.of("").toAbsolutePath();
-        Path logDir = projectDir.resolve("log");
-        Files.createDirectories(logDir);
+  public static void main(String[] args) throws Exception {
+    Path projectDir = Path.of("").toAbsolutePath();
+    Path configPath = projectDir.resolve("config.ini");
+    Path authPath = projectDir.resolve("auth.ini");
+    IniConfig auth_ini = IniConfig.load(authPath);
+    IniConfig config_ini = IniConfig.load(configPath);
+    AppConfig cfg = AppConfig.fromIni(config_ini);
+    log = LoggerFactory.getLogger(GraphCli.class);
+    Path logDir = projectDir.resolve(cfg.logDir);
+    Files.createDirectories(logDir);
+    System.setProperty("LOG_DIR", logDir.toString());
+    System.setProperty("LOG_FILE", "graphcli.log");
+    log.info("STARTING - MODE : {}", cfg.mode);
 
-        // Tell logback where to write logs (./log/graphcli.log by default)
-        System.setProperty("LOG_DIR", logDir.toString());
-        System.setProperty("LOG_FILE", "graphcli.log");
+    log.debug("START mode={} dryRun={} verbose={} config={}",
+        cfg.mode, cfg.dryRun, cfg.verbose, configPath.toAbsolutePath());
 
-        Path configPath = (args.length > 0) ? Path.of(args[0]) : projectDir.resolve("config.ini");
-        IniConfig cfg = IniConfig.load(configPath);
+    GraphServiceClient graph = buildGraphClient(auth_ini);
 
-        String tenantId = cfg.get("auth", "tenantId", true);
-        String clientId = cfg.get("auth", "clientId", true);
-        String clientSecret = cfg.get("auth", "clientSecret", true);
-        String scope = cfg.getOrDefault("auth", "scope", "https://graph.microsoft.com/.default");
-
-        String mode = cfg.get("operation", "mode", true).trim().toLowerCase();
-
-        log.info("Starting GraphCli");
-        log.info("Project dir: {}", projectDir);
-        log.info("Config path: {}", configPath);
-        log.info("Mode: {}", mode);
-
-        GraphServiceClient graph = buildGraphClient(tenantId, clientId, clientSecret, scope);
-
-        switch (mode) {
-            case "search" -> doSearch(cfg, graph);
-            case "delete" -> doDelete(cfg, graph);
-            case "invite" -> doInvite(cfg, graph);
-            default -> throw new IllegalArgumentException("Unknown operation.mode: " + mode + " (expected search|delete|invite)");
-        }
-
-        log.info("Done.");
+    switch (cfg.mode) {
+      case search -> runSearch(cfg, graph);
+      case delete -> runDelete(cfg, graph);
+      case invite -> runInvite(cfg, config_ini, graph);
+      default -> {
+        System.out.println("Unsupported mode :{}\n try: 'search', 'delete' or 'invite'" + cfg.mode);
+        log.warn("Unsupported mode: {}", cfg.mode);
+        System.exit(2);
+      }
     }
 
-    private static GraphServiceClient buildGraphClient(
-            String tenantId,
-            String clientId,
-            String clientSecret,
-            String scope
-    ) {
-        ClientSecretCredential credential = new ClientSecretCredentialBuilder()
-                .tenantId(tenantId)
-                .clientId(clientId)
-                .clientSecret(clientSecret)
-                .build();
+    log.info("DONE");
+    // It was haning in after completion waiting on something in the backend
+    // so I made it explicitly exit after completion
+    System.exit(0);
+  }
 
-        return new GraphServiceClient(credential, new String[]{scope});
+  private static GraphServiceClient buildGraphClient(IniConfig ini) {
+    String tenantId = ini.get("auth", "tenantId", true);
+    String clientId = ini.get("auth", "clientId", true);
+    String clientSecret = ini.get("auth", "clientSecret", true);
+    String scope = ini.getOrDefault("auth", "scope", "https://graph.microsoft.com/.default");
+
+    ClientSecretCredential credential = new ClientSecretCredentialBuilder()
+        .tenantId(tenantId)
+        .clientId(clientId)
+        .clientSecret(clientSecret)
+        .build();
+
+    return new GraphServiceClient(credential, new String[] { scope });
+  }
+
+  private static void runInvite(AppConfig cfg, IniConfig ini, GraphServiceClient graph) {
+    String email = ini.get("invite", "email", true).trim();
+    String redirectUrl = ini.get("invite", "redirectUrl", true).trim();
+    boolean sendMsg = ini.getBoolean("invite", "sendInvitationMessage", true);
+
+    System.out.println("=== Execution Plan ===");
+    System.out.println("Action: CREATE guest invitation");
+    System.out.println("  email: " + email);
+    System.out.println("  redirectUrl: " + redirectUrl);
+    System.out.println("  sendInvitationMessage: " + sendMsg);
+    System.out.println("dryRun=" + cfg.dryRun);
+    System.out.println("======================");
+
+    if (cfg.dryRun) {
+      System.out.println("DRY RUN: no changes made.");
+      return;
     }
 
-    private static void doSearch(IniConfig cfg, GraphServiceClient graph) {
-        String filter = cfg.get("operation", "userSearchFilter", true);
+    GraphGuestInviter inviter = new GraphGuestInviter(graph);
+    var created = inviter.invite(email, redirectUrl, sendMsg);
 
-        log.info("Searching users with filter: {}", filter);
+    System.out.println("Invitation created.");
+    System.out.println("- invitedUserEmailAddress=" + safe(created.getInvitedUserEmailAddress()));
+    System.out
+        .println("- invitedUserId=" + (created.getInvitedUser() != null ? safe(created.getInvitedUser().getId()) : ""));
+    System.out.println("- inviteRedeemUrl=" + safe(created.getInviteRedeemUrl()));
+    System.out.println("=========INVITE==========");
+    System.out.println(safe(created.getInviteRedeemUrl()));
+    System.out.println("=========================");
+  }
 
-        List<User> users = Objects.requireNonNull(
-                graph.users().get(request -> {
-                    request.queryParameters.filter = filter;
-                    request.queryParameters.top = 25;
-                    request.queryParameters.select = new String[]{"id", "displayName", "mail", "userPrincipalName"};
-                }).getValue()
-        );
+  private static void runSearch(AppConfig cfg, GraphServiceClient graph) {
+    log.debug("SEARCH subMode={} query='{}' maxResults={}", cfg.subMode, cfg.query, cfg.maxResults);
 
-        log.info("Matched users: {}", users.size());
-        System.out.println("Matched users: " + users.size());
+    GraphUserFinder finder = new GraphUserFinder(graph);
+    List<UserSummary> users = finder.find(cfg);
 
-        for (User u : users) {
-            String line = String.format("- id=%s | displayName=%s | mail=%s | upn=%s",
-                    safe(u.getId()), safe(u.getDisplayName()), safe(u.getMail()), safe(u.getUserPrincipalName()));
-            log.info(line);
-            System.out.println(line);
-        }
+    printCandidates(users);
+
+    log.debug("RESULT searchCount={}", users.size());
+  }
+
+  private static void runDelete(AppConfig cfg, GraphServiceClient graph) {
+    log.debug("DELETE requested dryRun={} subMode={} query='{}'", cfg.dryRun, cfg.subMode, cfg.query);
+
+    GraphUserFinder finder = new GraphUserFinder(graph);
+    List<UserSummary> matches = finder.find(cfg);
+
+    if (matches.isEmpty()) {
+      System.out.println("No user found. No changes made.");
+      log.debug("MATCH count=0");
+      return;
     }
 
-    private static void doDelete(IniConfig cfg, GraphServiceClient graph) {
-        boolean dryRun = cfg.getBoolean("operation", "dryRun", true);
-        String lookupBy = cfg.getOrDefault("operation", "lookupBy", "upn").trim().toLowerCase();
-        String value = cfg.get("operation", "email", true).trim();
-
-        log.info("Delete requested. dryRun={}, lookupBy={}, value={}", dryRun, lookupBy, value);
-
-        if ("id".equals(lookupBy)) {
-            // Direct delete by object id
-            if (dryRun) {
-                log.warn("DRY RUN: would delete user by id={}", value);
-                System.out.println("DRY RUN: would delete user by id=" + value);
-                return;
-            }
-            log.warn("Deleting user by id={}", value);
-            graph.users().byUserId(value).delete();
-            log.warn("Delete completed for id={}", value);
-            System.out.println("Delete completed for id=" + value);
-            return;
-        }
-
-        // Resolve user by UPN or mail
-        String filter;
-        if ("upn".equals(lookupBy)) {
-            filter = "userPrincipalName eq '" + escapeOData(value) + "'";
-        } else if ("mail".equals(lookupBy)) {
-            filter = "mail eq '" + escapeOData(value) + "'";
-        } else {
-            throw new IllegalArgumentException("lookupBy must be one of: upn|mail|id (got: " + lookupBy + ")");
-        }
-
-        List<User> users = Objects.requireNonNull(
-                graph.users().get(request -> {
-                    request.queryParameters.filter = filter;
-                    request.queryParameters.top = 5; // allow detection of multiple matches
-                    request.queryParameters.select = new String[]{"id", "displayName", "mail", "userPrincipalName"};
-                }).getValue()
-        );
-
-        if (users.isEmpty()) {
-            log.info("No user found for {}={}", lookupBy, value);
-            System.out.println("No user found for " + lookupBy + "=" + value);
-            return;
-        }
-
-        if (users.size() > 1) {
-            log.error("Multiple users matched {}={}. Refusing to delete.", lookupBy, value);
-            System.out.println("Multiple users matched; refusing to delete. Matches:");
-            for (User u : users) {
-                String line = String.format("- id=%s | displayName=%s | mail=%s | upn=%s",
-                        safe(u.getId()), safe(u.getDisplayName()), safe(u.getMail()), safe(u.getUserPrincipalName()));
-                log.error(line);
-                System.out.println(line);
-            }
-            return;
-        }
-
-        User target = users.get(0);
-        log.warn("Resolved target for delete: id={} displayName={} mail={} upn={}",
-                safe(target.getId()), safe(target.getDisplayName()), safe(target.getMail()), safe(target.getUserPrincipalName()));
-
-        if (dryRun) {
-            log.warn("DRY RUN: would delete user id={}", safe(target.getId()));
-            System.out.println("DRY RUN: would delete user id=" + safe(target.getId()));
-            return;
-        }
-
-        graph.users().byUserId(target.getId()).delete();
-        log.warn("Delete completed for id={}", safe(target.getId()));
-        System.out.println("Delete completed.");
+    if (matches.size() > 1) {
+      System.out.println("Multiple users matched; refusing to delete. No changes made.");
+      printCandidates(matches);
+      System.out.println("Tip: re-run with [search].subMode=id and [search].query=<id>.");
+      log.warn("MATCH count={} refusingToProceed=true", matches.size());
+      return;
     }
 
-    private static void doInvite(IniConfig cfg, GraphServiceClient graph) {
-        String email = cfg.get("operation", "email", true).trim();
+    UserSummary target = matches.get(0);
+    if (cfg.verbose) {
+      System.out.println("=== Execution Plan ===");
+      System.out.printf("Resolved user:%n");
+      System.out.printf("  id: %s%n", safe(target.id()));
+      System.out.printf("  displayName: %s%n", safe(target.displayName()));
+      System.out.printf("  userPrincipalName: %s%n", safe(target.userPrincipalName()));
+      System.out.printf("  mail: %s%n", safe(target.mail()));
+      System.out.printf("  userType: %s%n", safe(target.userType()));
+      System.out.printf("Actions:%n");
+      System.out.printf("  1) DELETE user (by id)%n");
+      System.out.printf("dryRun=%s%n", cfg.dryRun);
+      System.out.println("======================");
 
-        String redirectUrl = cfg.get("invite", "redirectUrl", true).trim();
-        boolean sendMessage = cfg.getBoolean("invite", "sendInvitationMessage", true);
+      log.warn("PLAN deleteUserId={} upn={} mail={}",
+          safe(target.id()), safe(target.userPrincipalName()), safe(target.mail()));
 
-        log.info("Creating B2B guest invitation for {} redirectUrl={} sendMessage={}", email, redirectUrl, sendMessage);
+      if (cfg.dryRun) {
+        System.out.println("DRY RUN: no changes made.");
+        log.warn("RESULT status=DRY_RUN");
+        return;
+      }
+    }
+    // Execute
+    GraphUserDeleter deleter = new GraphUserDeleter(graph);
+    try {
+      deleter.deleteById(target.id());
+      System.out.println("Delete completed.");
+      log.warn("RESULT status=SUCCESS deletedUserId={}", safe(target.id()));
+    } catch (Exception e) {
+      System.out.println("Delete failed. No changes made beyond attempted delete.");
+      System.out.println("Error: " + e.getMessage());
+      log.error("RESULT status=FAILED deletedUserId={} error={}", safe(target.id()), e.toString(), e);
+      System.exit(3);
+    }
+  }
 
-        Invitation invitation = new Invitation();
-        invitation.setInvitedUserEmailAddress(email);
-        invitation.setInviteRedirectUrl(redirectUrl);
-        invitation.setSendInvitationMessage(sendMessage);
-
-        Invitation created = graph.invitations().post(invitation);
-
-        log.info("Invitation created: invitedUserEmailAddress={} redeemUrl={}",
-                safe(created.getInvitedUserEmailAddress()), safe(created.getInviteRedeemUrl()));
-
-        System.out.println("Invitation created.");
-        System.out.println("- invitedUserEmailAddress=" + safe(created.getInvitedUserEmailAddress()));
-        System.out.println("- inviteRedeemUrl=" + safe(created.getInviteRedeemUrl()));
-        if (created.getInvitedUser() != null) {
-            System.out.println("- invitedUser.id=" + safe(created.getInvitedUser().getId()));
-        }
+  private static void printCandidates(List<UserSummary> users) {
+    System.out.println("========");
+    System.out.println("Matches: " + users.size());
+    for (UserSummary u : users) {
+      System.out.println("========");
+      StringBuilder sb = new StringBuilder(safe("id = " + u.id() + "\n"));
+      sb.append("name = " + u.displayName() + "\n");
+      sb.append("upn = " + u.userPrincipalName() + "\n");
+      sb.append("mail = " + u.mail() + "\n");
+      sb.append("userType = " + u.userType() + "\n");
+      if (u.externalUserState() != null) {
+        sb.append("InviteState= " + u.externalUserState() + "\n");
+      }
+      sb.append("acountEnabled = " + u.accountEnabled());
+      ;
+      System.out.println(sb);
     }
 
-    private static String escapeOData(String s) {
-        return s.replace("'", "''");
-    }
+  }
 
-    private static String safe(String s) {
-        return (s == null) ? "" : s;
-    }
+  private static String safe(String s) {
+    return (s == null) ? "" : s;
+  }
 }
