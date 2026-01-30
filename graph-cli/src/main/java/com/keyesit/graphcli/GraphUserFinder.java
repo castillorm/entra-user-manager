@@ -1,16 +1,33 @@
+
 package com.keyesit.graphcli;
 
 import com.microsoft.graph.models.User;
 import com.microsoft.graph.serviceclient.GraphServiceClient;
+import com.microsoft.kiota.ApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 public class GraphUserFinder {
   private static final Logger log = LoggerFactory.getLogger(GraphUserFinder.class);
+
+  private static final String[] SELECT = {
+      "id",
+      "displayName",
+      "userPrincipalName",
+      "mail",
+      "userType",
+      "accountEnabled",
+      "externalUserState",
+      "externalUserStateChangeDateTime"
+  };
+
+  private static final Pattern GUID = Pattern
+      .compile("(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
 
   private final GraphServiceClient graph;
 
@@ -19,124 +36,76 @@ public class GraphUserFinder {
   }
 
   public List<UserSummary> find(AppConfig cfg) {
-    return switch (cfg.subMode) {
-      case id -> findById(cfg.query);
-      case upn -> findByUpn(cfg.query);
-      case email -> findByFilter("mail eq '" + escapeOData(cfg.query) + "'", cfg.maxResults);
-      case namePrefix -> findByFilter("startswith(displayName,'" + escapeOData(cfg.query) + "')", cfg.maxResults);
-      case auto -> findAuto(cfg);
-    };
-  }
+    String q = cfg.query == null ? "" : cfg.query.trim();
+    if (q.isEmpty())
+      return List.of();
 
-  private List<UserSummary> findByUpn(String upn) {
-    String q = upn.trim();
-    log.debug("Finding by UPN (direct): {}", q);
-
-    // Direct addressing: GET /users/{userPrincipalName}
-    // In the Graph SDK, byUserId() accepts either an object id OR a UPN.
-    try {
-
-      User u = graph.users().byUserId(q).get(request -> {
-        request.queryParameters.select = new String[] {
-
-            "id",
-            "displayName",
-            "userPrincipalName",
-            "mail",
-            "userType",
-            "accountEnabled",
-            "externalUserState",
-            "externalUserStateChangeDateTime"
-        };
-      });
-
-      if (u != null)
-        return List.of(toSummary(u));
-    } catch (Exception e) {
-      // Fall back to filter if direct addressing fails (404, etc.)
-      log.debug("Direct UPN lookup did not return a user; falling back to filter. Reason: {}", e.getMessage());
-    }
-
-    // Fallback: filter-based exact match
-    return findByFilter("userPrincipalName eq '" + escapeOData(q) + "'", 5);
-  }
-
-  private List<UserSummary> findAuto(AppConfig cfg) {
-    String q = cfg.query.trim();
-
-    // 0) If it looks like an object id (GUID), try by-id first
-    if (looksLikeGuid(q)) {
-      log.debug("AUTO: query looks like GUID; trying id lookup first");
-      List<UserSummary> byId = findById(q);
+    // 0) GUID => try by-id first
+    if (GUID.matcher(q).matches()) {
+      var byId = getOne(q, "AUTO: by-id");
       if (!byId.isEmpty())
         return byId;
-
-      // If the GUID lookup returns nothing, fall through to other strategies
-      log.debug("AUTO: id lookup returned 0; falling back to other strategies");
     }
 
-    // 1) If it contains '@', treat as UPN/email
+    // 1) UPN/email-ish
     if (q.contains("@")) {
-      log.debug("AUTO: treating query as UPN/email; trying UPN first then mail");
+      // Try direct lookup first (fast). If it 400s, fall back to filter.
+      try {
+        var direct = getOne(q, "AUTO: by-UPN direct");
+        if (!direct.isEmpty())
+          return direct;
+      } catch (ApiException e) {
+        Integer status = e.getResponseStatusCode();
+        if (status != null && status == 400) {
+          log.debug("AUTO: UPN direct 400; falling back to filter. {}", e.getMessage());
+          // fall through to filters below
+        } else if (status != null && status == 404) {
+          // not found; continue to filters below (mail etc.)
+        } else {
+          throw e;
+        }
+      }
 
-      List<UserSummary> upn = findByFilter("userPrincipalName eq '" + escapeOData(q) + "'", cfg.maxResults);
+      String esc = escapeOData(q);
+      var upn = filter("userPrincipalName eq '" + esc + "'", cfg.maxResults);
       if (!upn.isEmpty())
         return upn;
 
-      return findByFilter("mail eq '" + escapeOData(q) + "'", cfg.maxResults);
+      return filter("mail eq '" + esc + "'", cfg.maxResults);
     }
 
-    // 2) Otherwise treat as name prefix
-    log.debug("AUTO: treating query as namePrefix");
-    return findByFilter("startswith(displayName,'" + escapeOData(q) + "')", cfg.maxResults);
+    // 2) Name prefix
+    return filter("startswith(displayName,'" + escapeOData(q) + "')", cfg.maxResults);
   }
 
-  private static boolean looksLikeGuid(String s) {
-    // Strict UUID/GUID format: 8-4-4-4-12 hex
-    return s.matches("(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
+  /** Direct GET by userId (works for id, and often for UPN). */
+  private List<UserSummary> getOne(String userId, String tag) {
+    log.debug("{} {}", tag, userId);
+
+    try {
+      User u = graph.users().byUserId(userId).get(req -> req.queryParameters.select = SELECT);
+      return u == null ? List.of() : List.of(toSummary(u));
+    } catch (ApiException e) {
+      Integer status = e.getResponseStatusCode();
+      if (status != null && status == 404)
+        return List.of();
+      throw e;
+    }
   }
 
-  private List<UserSummary> findById(String id) {
-    log.debug("Finding by id: {}", id);
+  /** Filter query returning up to maxResults. */
+  private List<UserSummary> filter(String filter, int maxResults) {
+    log.debug("AUTO: by-filter {}", filter);
 
-    // GET /users/{id}
-    User u = graph.users().byUserId(id).get(request -> {
-      request.queryParameters.select = new String[] {
-          "id",
-          "displayName",
-          "userPrincipalName",
-          "mail",
-          "userType",
-          "accountEnabled",
-          "externalUserState",
-          "externalUserStateChangeDateTime"
-      };
-    });
-
-    if (u == null)
-      return List.of();
-    return List.of(toSummary(u));
-  }
-
-  private List<UserSummary> findByFilter(String filter, int maxResults) {
-    log.debug("Finding by filter: {}", filter);
-
-    var page = graph.users().get(request -> {
-      request.queryParameters.filter = filter;
-      request.queryParameters.top = maxResults;
-      request.queryParameters.select = new String[] {
-          "id",
-          "displayName",
-          "userPrincipalName",
-          "mail",
-          "userType",
-          "accountEnabled",
-          "externalUserState",
-          "externalUserStateChangeDateTime"
-      };
+    var page = graph.users().get(req -> {
+      req.queryParameters.filter = filter;
+      req.queryParameters.top = maxResults;
+      req.queryParameters.select = SELECT;
     });
 
     List<User> users = Objects.requireNonNullElse(page.getValue(), List.of());
+    if (users.isEmpty())
+      return List.of();
 
     List<UserSummary> out = new ArrayList<>(users.size());
     for (User u : users)

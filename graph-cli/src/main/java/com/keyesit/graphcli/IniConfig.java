@@ -1,3 +1,4 @@
+
 package com.keyesit.graphcli;
 
 import java.io.BufferedReader;
@@ -9,26 +10,57 @@ import java.util.HashMap;
 import java.util.Map;
 
 public final class IniConfig {
-  private final Map<String, Map<String, String>> sections = new HashMap<>();
 
-  public static IniConfig load(Path path) throws IOException {
-    IniConfig cfg = new IniConfig();
-    cfg.parse(path);
+  private final Map<String, Map<String, String>> sections = new HashMap<>();
+  private final Path source;
+
+  private IniConfig(Path source) {
+    this.source = source;
+  }
+
+  // ---------- load ----------
+
+  public static IniConfig load(Path path) {
+    if (path == null)
+      die("INI path was null");
+    if (!Files.exists(path))
+      die("Missing config file: " + path.toAbsolutePath());
+    if (!Files.isRegularFile(path))
+      die("Not a file: " + path.toAbsolutePath());
+
+    IniConfig cfg = new IniConfig(path);
+    try {
+      cfg.parse(path);
+    } catch (IOException e) {
+      die("Failed to read config file: " + path.toAbsolutePath() + " (" + e.getMessage() + ")");
+    }
     return cfg;
   }
 
-  public String getNormalized(String section, String key, boolean required) {
-    String val = get(section, key, required).trim();
-    return stripQuotes(val);
+  // ---------- accessors ----------
+
+  /** Returns value or exits with a friendly error if missing/blank. */
+  public String get(String section, String key) {
+    String v = getRaw(section, key);
+    if (v == null) {
+      die("Missing required config: " + section + "." + key +
+          "\n  file: " + source.toAbsolutePath());
+    }
+    v = stripQuotes(v.trim());
+    if (v.isBlank()) {
+      die("Config value must not be blank: " + section + "." + key +
+          "\n  file: " + source.toAbsolutePath());
+    }
+    return v;
   }
 
-  private static String stripQuotes(String s) {
-    if ((s.startsWith("\"") && s.endsWith("\"")) ||
-        (s.startsWith("'") && s.endsWith("'"))) {
-      return s.substring(1, s.length() - 1).trim();
-    }
-    return s;
+  public boolean getBoolean(String section, String key) {
+    String v = get(section, key); // required
+    String t = v.trim();
+    return t.equalsIgnoreCase("true") || t.equalsIgnoreCase("yes") || t.equals("1");
   }
+
+  // ---------- parsing ----------
 
   private void parse(Path path) throws IOException {
     String currentSection = "";
@@ -58,34 +90,22 @@ public final class IniConfig {
     }
   }
 
-  public String get(String section, String key, boolean required) {
-    String val = getRaw(section, key);
-
-    if ((val == null || val.isBlank()) && required) {
-      throw new IllegalArgumentException("Missing required config: " + section + "." + key);
-    }
-
-    if (val == null)
-      return null;
-
-    // Normalize: trim + strip wrapping quotes to support INI values containing '#'
-    return stripQuotes(val.trim());
-  }
-
   private String getRaw(String section, String key) {
     Map<String, String> sec = sections.get(section);
     return (sec == null) ? null : sec.get(key);
   }
 
-  public String getOrDefault(String section, String key, String def) {
-    String v = get(section, key, false);
-    return (v == null || v.isBlank()) ? def : v;
+  private static String stripQuotes(String s) {
+    if ((s.startsWith("\"") && s.endsWith("\"")) ||
+        (s.startsWith("'") && s.endsWith("'"))) {
+      return s.substring(1, s.length() - 1).trim();
+    }
+    return s;
   }
 
-  public boolean getBoolean(String section, String key, boolean def) {
-    String v = get(section, key, false);
-    if (v == null)
-      return def;
-    return v.trim().equalsIgnoreCase("true") || v.trim().equalsIgnoreCase("yes") || v.trim().equals("1");
+  // ---------- exit ----------
+
+  private static void die(String message) {
+    throw new ConfigException(message);
   }
 }

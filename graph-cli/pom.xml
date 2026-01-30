@@ -1,3 +1,4 @@
+
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -19,10 +20,11 @@
     <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-    <!-- Dependencies -->
+    <!-- Dependency Versions -->
     <msgraph.version>6.60.0</msgraph.version>
     <azure.identity.version>1.16.3</azure.identity.version>
     <junit.jupiter.version>5.11.4</junit.jupiter.version>
+    <mockito.version>5.10.0</mockito.version>
   </properties>
 
   <!-- ===================================================== -->
@@ -59,10 +61,18 @@
       <scope>test</scope>
     </dependency>
 
+    <!-- Testing: Mockito -->
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <version>${mockito.version}</version>
+      <scope>test</scope>
+    </dependency>
+
   </dependencies>
 
   <!-- ===================================================== -->
-  <!-- Build                                                  -->
+  <!-- Build                                                 -->
   <!-- ===================================================== -->
   <build>
     <plugins>
@@ -82,6 +92,12 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <version>3.5.2</version>
+        <configuration>
+          <argLine>
+            -XX:+EnableDynamicAgentLoading
+            -Xshare:off
+          </argLine>
+        </configuration>
       </plugin>
 
       <!-- Run the application -->

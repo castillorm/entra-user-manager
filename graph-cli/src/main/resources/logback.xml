@@ -1,8 +1,11 @@
-<configuration>
-  <!-- LOG_DIR comes from system property set by the app. Default is ./log -->
-  <property name="LOG_DIR" value="${LOG_DIR:-log}" />
-  <property name="LOG_FILE" value="${LOG_FILE:-graphcli.log}" />
 
+<configuration>
+
+  <!-- Hardcoded log location -->
+  <property name="LOG_DIR" value="log" />
+  <property name="LOG_FILE" value="graphcli.log" />
+
+  <!-- FILE appender: DEBUG and above -->
   <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
     <file>${LOG_DIR}/${LOG_FILE}</file>
 
@@ -11,22 +14,33 @@
       <maxHistory>14</maxHistory>
     </rollingPolicy>
 
+    <!-- Force DEBUG for file -->
+    <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+      <level>DEBUG</level>
+    </filter>
+
     <encoder>
       <pattern>%d{yyyy-MM-dd HH:mm:ss} %-5level [%thread] %logger{36} - %msg%n</pattern>
     </encoder>
   </appender>
 
-<appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-  <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
-    <level>${console.level:-WARN}</level>
-  </filter>
-  <encoder>
-      <pattern>%d{HH:mm:ss} %-5level %logger{36} - %msg%n</pattern>
-  </encoder>
-</appender>
+  <!-- CONSOLE appender: effectively silent -->
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <!-- Change to ERROR or OFF -->
+    <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+      <level>ERROR</level>
+    </filter>
 
-  <root level="INFO">
+    <encoder>
+      <pattern>%d{HH:mm:ss} %-5level %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Root logger -->
+  <root level="DEBUG">
     <appender-ref ref="CONSOLE" />
     <appender-ref ref="FILE" />
   </root>
+
 </configuration>
+

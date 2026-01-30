@@ -9,64 +9,138 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class AppConfigTest {
 
-    @Test
-    void validMinimalConvertToGuestConfig_parsesSuccessfully() throws Exception {
-        String ini = """
-            [operation]
-            mode=convertToGuest
-            dryRun=true
+  // ---------- happy paths ----------
 
-            [search]
-            subMode=auto
-            query=alice@contoso.com
-            maxResults=25
+  @Test
+  void searchMode_parsesSuccessfully() throws Exception {
+    String ini = """
+        [operation]
+        mode=search
 
-            [invite]
-            redirectUrl=https://myapps.microsoft.com
-            sendInvitationMessage=true
+        [search]
+        query=alice@contoso.com
+        maxResults=25
 
-            [logging]
-            verbose=false
-            dir=log
-            """;
+        [invite]
+        redirectUrl=
+        sendInvitationMessage=true
+        """;
 
-        Path tmp = Files.createTempFile("config", ".ini");
-        Files.writeString(tmp, ini);
+    AppConfig cfg = loadAppConfig(ini);
 
-        IniConfig cfg = IniConfig.load(tmp);
-        AppConfig app = AppConfig.fromIni(cfg);
+    assertEquals(AppConfig.Mode.search, cfg.mode);
+    assertEquals("alice@contoso.com", cfg.query);
+    assertEquals(25, cfg.maxResults);
 
-        assertEquals(AppConfig.Mode.convertToGuest, app.mode);
-        assertTrue(app.dryRun);
-        assertEquals(AppConfig.SearchSubMode.auto, app.subMode);
-        assertEquals("alice@contoso.com", app.query);
-        assertEquals(25, app.maxResults);
-        assertEquals("https://myapps.microsoft.com", app.inviteRedirectUrl.toString());
-        assertFalse(app.verbose);
-        assertEquals("log", app.logDir);
-    }
+    // Not used in search mode — null is expected
+    assertNull(cfg.inviteRedirectUrl);
+    assertTrue(cfg.sendInvitationMessage);
+  }
 
-    @Test
-    void missingSearchQuery_failsValidation() throws Exception {
-        String ini = """
-            [operation]
-            mode=search
+  @Test
+  void inviteMode_parsesSuccessfully() throws Exception {
+    String ini = """
+        [operation]
+        mode=invite
 
-            [search]
-            subMode=auto
-            """;
+        [search]
+        query=ignored
+        maxResults=10
 
-        Path tmp = Files.createTempFile("config", ".ini");
-        Files.writeString(tmp, ini);
+        [invite]
+        redirectUrl=https://myapps.microsoft.com
+        sendInvitationMessage=false
+        """;
 
-        IniConfig cfg = IniConfig.load(tmp);
+    AppConfig cfg = loadAppConfig(ini);
 
-        IllegalArgumentException ex = assertThrows(
-                IllegalArgumentException.class,
-                () -> AppConfig.fromIni(cfg)
-        );
+    assertEquals(AppConfig.Mode.invite, cfg.mode);
+    assertEquals("https://myapps.microsoft.com", cfg.inviteRedirectUrl.toString());
+    assertFalse(cfg.sendInvitationMessage);
+  }
 
-        assertTrue(ex.getMessage().contains("search.query"));
-    }
+  // ---------- failure cases ----------
+
+  @Test
+  void missing_search_query_throws() {
+    String ini = """
+        [operation]
+        mode=search
+
+        [search]
+        maxResults=25
+
+        [invite]
+        redirectUrl=
+        sendInvitationMessage=true
+        """;
+
+    ConfigException ex = assertThrows(ConfigException.class, () -> loadAppConfig(ini));
+    assertTrue(ex.getMessage().contains("search.query"));
+  }
+
+  @Test
+  void missing_search_maxResults_throws() {
+    String ini = """
+        [operation]
+        mode=search
+
+        [search]
+        query=alice@contoso.com
+
+        [invite]
+        redirectUrl=
+        sendInvitationMessage=true
+        """;
+
+    ConfigException ex = assertThrows(ConfigException.class, () -> loadAppConfig(ini));
+    assertTrue(ex.getMessage().contains("search.maxResults"));
+  }
+
+  @Test
+  void inviteMode_missing_redirectUrl_throws() {
+    String ini = """
+        [operation]
+        mode=invite
+
+        [search]
+        query=alice
+        maxResults=25
+
+        [invite]
+        redirectUrl=
+        sendInvitationMessage=true
+        """;
+
+    ConfigException ex = assertThrows(ConfigException.class, () -> loadAppConfig(ini));
+    assertTrue(ex.getMessage().contains("invite.redirectUrl"));
+  }
+
+  @Test
+  void invalid_mode_throws() {
+    String ini = """
+        [operation]
+        mode=bogus
+
+        [search]
+        query=alice
+        maxResults=25
+
+        [invite]
+        redirectUrl=
+        sendInvitationMessage=true
+        """;
+
+    ConfigException ex = assertThrows(ConfigException.class, () -> loadAppConfig(ini));
+    assertTrue(ex.getMessage().contains("operation.mode"));
+  }
+
+  // ---------- helpers ----------
+
+  private static AppConfig loadAppConfig(String iniText) throws Exception {
+    Path tmp = Files.createTempFile("config", ".ini");
+    Files.writeString(tmp, iniText);
+    IniConfig cfg = IniConfig.load(tmp);
+    return AppConfig.fromIni(cfg);
+  }
 }
-
