@@ -1,7 +1,9 @@
+
 package com.keyesit.graphcli;
 
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -13,18 +15,16 @@ class AppConfigTest {
 
   @Test
   void searchMode_parsesSuccessfully() throws Exception {
-    String ini = """
-        [operation]
-        mode=search
-
-        [search]
-        query=alice@contoso.com
-        maxResults=25
-
-        [invite]
-        redirectUrl=
-        sendInvitationMessage=true
-        """;
+    String ini = "[operation]\n" +
+        "mode=search\n" +
+        "\n" +
+        "[search]\n" +
+        "query=alice@contoso.com\n" +
+        "maxResults=25\n" +
+        "\n" +
+        "[invite]\n" +
+        "redirectUrl=\n" +
+        "sendInvitationMessage=true\n";
 
     AppConfig cfg = loadAppConfig(ini);
 
@@ -39,18 +39,16 @@ class AppConfigTest {
 
   @Test
   void inviteMode_parsesSuccessfully() throws Exception {
-    String ini = """
-        [operation]
-        mode=invite
-
-        [search]
-        query=ignored
-        maxResults=10
-
-        [invite]
-        redirectUrl=https://myapps.microsoft.com
-        sendInvitationMessage=false
-        """;
+    String ini = "[operation]\n" +
+        "mode=invite\n" +
+        "\n" +
+        "[search]\n" +
+        "query=ignored\n" +
+        "maxResults=10\n" +
+        "\n" +
+        "[invite]\n" +
+        "redirectUrl=https://myapps.microsoft.com\n" +
+        "sendInvitationMessage=false\n";
 
     AppConfig cfg = loadAppConfig(ini);
 
@@ -59,21 +57,19 @@ class AppConfigTest {
     assertFalse(cfg.sendInvitationMessage);
   }
 
-  // ---------- failure cases ----------
+  // ---------- failure cases (implementation throws ConfigException) ----------
 
   @Test
   void missing_search_query_throws() {
-    String ini = """
-        [operation]
-        mode=search
-
-        [search]
-        maxResults=25
-
-        [invite]
-        redirectUrl=
-        sendInvitationMessage=true
-        """;
+    String ini = "[operation]\n" +
+        "mode=search\n" +
+        "\n" +
+        "[search]\n" +
+        "maxResults=25\n" +
+        "\n" +
+        "[invite]\n" +
+        "redirectUrl=\n" +
+        "sendInvitationMessage=true\n";
 
     ConfigException ex = assertThrows(ConfigException.class, () -> loadAppConfig(ini));
     assertTrue(ex.getMessage().contains("search.query"));
@@ -81,17 +77,15 @@ class AppConfigTest {
 
   @Test
   void missing_search_maxResults_throws() {
-    String ini = """
-        [operation]
-        mode=search
-
-        [search]
-        query=alice@contoso.com
-
-        [invite]
-        redirectUrl=
-        sendInvitationMessage=true
-        """;
+    String ini = "[operation]\n" +
+        "mode=search\n" +
+        "\n" +
+        "[search]\n" +
+        "query=alice@contoso.com\n" +
+        "\n" +
+        "[invite]\n" +
+        "redirectUrl=\n" +
+        "sendInvitationMessage=true\n";
 
     ConfigException ex = assertThrows(ConfigException.class, () -> loadAppConfig(ini));
     assertTrue(ex.getMessage().contains("search.maxResults"));
@@ -99,18 +93,16 @@ class AppConfigTest {
 
   @Test
   void inviteMode_missing_redirectUrl_throws() {
-    String ini = """
-        [operation]
-        mode=invite
-
-        [search]
-        query=alice
-        maxResults=25
-
-        [invite]
-        redirectUrl=
-        sendInvitationMessage=true
-        """;
+    String ini = "[operation]\n" +
+        "mode=invite\n" +
+        "\n" +
+        "[search]\n" +
+        "query=alice\n" +
+        "maxResults=25\n" +
+        "\n" +
+        "[invite]\n" +
+        "redirectUrl=\n" +
+        "sendInvitationMessage=true\n";
 
     ConfigException ex = assertThrows(ConfigException.class, () -> loadAppConfig(ini));
     assertTrue(ex.getMessage().contains("invite.redirectUrl"));
@@ -118,18 +110,16 @@ class AppConfigTest {
 
   @Test
   void invalid_mode_throws() {
-    String ini = """
-        [operation]
-        mode=bogus
-
-        [search]
-        query=alice
-        maxResults=25
-
-        [invite]
-        redirectUrl=
-        sendInvitationMessage=true
-        """;
+    String ini = "[operation]\n" +
+        "mode=bogus\n" +
+        "\n" +
+        "[search]\n" +
+        "query=alice\n" +
+        "maxResults=25\n" +
+        "\n" +
+        "[invite]\n" +
+        "redirectUrl=\n" +
+        "sendInvitationMessage=true\n";
 
     ConfigException ex = assertThrows(ConfigException.class, () -> loadAppConfig(ini));
     assertTrue(ex.getMessage().contains("operation.mode"));
@@ -139,7 +129,7 @@ class AppConfigTest {
 
   private static AppConfig loadAppConfig(String iniText) throws Exception {
     Path tmp = Files.createTempFile("config", ".ini");
-    Files.writeString(tmp, iniText);
+    Files.write(tmp, iniText.getBytes(StandardCharsets.UTF_8));
     IniConfig cfg = IniConfig.load(tmp);
     return AppConfig.fromIni(cfg);
   }

@@ -1,19 +1,20 @@
 
 package com.keyesit.graphcli;
 
-import com.microsoft.graph.models.Invitation;
-import com.microsoft.graph.serviceclient.GraphServiceClient;
 import com.microsoft.graph.invitations.InvitationsRequestBuilder;
+import com.microsoft.graph.models.Invitation;
+import com.microsoft.graph.models.UserCollectionResponse;
+import com.microsoft.graph.serviceclient.GraphServiceClient;
 import com.microsoft.graph.users.UsersRequestBuilder;
 import com.microsoft.graph.users.item.UserItemRequestBuilder;
-import com.microsoft.graph.models.UserCollectionResponse;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.*;
 
 class AppGraphTest {
@@ -68,22 +69,21 @@ class AppGraphTest {
     when(graph.users()).thenReturn(users);
 
     UserCollectionResponse emptyPage = new UserCollectionResponse();
-    emptyPage.setValue(List.of());
+    emptyPage.setValue(Collections.emptyList());
 
     when(users.get(any())).thenReturn(emptyPage);
 
-    AppConfig cfg = loadConfig("""
-        [operation]
-        mode=search
-
-        [search]
-        query=alice
-        maxResults=5
-
-        [invite]
-        redirectUrl=
-        sendInvitationMessage=true
-        """);
+    AppConfig cfg = loadConfig(
+        "[operation]\n" +
+            "mode=search\n" +
+            "\n" +
+            "[search]\n" +
+            "query=alice\n" +
+            "maxResults=5\n" +
+            "\n" +
+            "[invite]\n" +
+            "redirectUrl=\n" +
+            "sendInvitationMessage=true\n");
 
     GraphUserFinder finder = new GraphUserFinder(graph);
     finder.find(cfg);
@@ -95,7 +95,7 @@ class AppGraphTest {
 
   private static AppConfig loadConfig(String ini) throws Exception {
     Path tmp = Files.createTempFile("config", ".ini");
-    Files.writeString(tmp, ini);
+    Files.write(tmp, ini.getBytes(StandardCharsets.UTF_8));
     IniConfig cfg = IniConfig.load(tmp);
     return AppConfig.fromIni(cfg);
   }

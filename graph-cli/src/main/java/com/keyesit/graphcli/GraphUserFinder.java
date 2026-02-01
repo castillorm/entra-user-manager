@@ -1,4 +1,3 @@
-
 package com.keyesit.graphcli;
 
 import com.microsoft.graph.models.User;
@@ -8,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.regex.Pattern;
@@ -38,11 +38,11 @@ public class GraphUserFinder {
   public List<UserSummary> find(AppConfig cfg) {
     String q = cfg.query == null ? "" : cfg.query.trim();
     if (q.isEmpty())
-      return List.of();
+      return Collections.emptyList();
 
     // 0) GUID => try by-id first
     if (GUID.matcher(q).matches()) {
-      var byId = getOne(q, "AUTO: by-id");
+      List<UserSummary> byId = getOne(q, "AUTO: by-id");
       if (!byId.isEmpty())
         return byId;
     }
@@ -51,7 +51,7 @@ public class GraphUserFinder {
     if (q.contains("@")) {
       // Try direct lookup first (fast). If it 400s, fall back to filter.
       try {
-        var direct = getOne(q, "AUTO: by-UPN direct");
+        List<UserSummary> direct = getOne(q, "AUTO: by-UPN direct");
         if (!direct.isEmpty())
           return direct;
       } catch (ApiException e) {
@@ -67,7 +67,7 @@ public class GraphUserFinder {
       }
 
       String esc = escapeOData(q);
-      var upn = filter("userPrincipalName eq '" + esc + "'", cfg.maxResults);
+      List<UserSummary> upn = filter("userPrincipalName eq '" + esc + "'", cfg.maxResults);
       if (!upn.isEmpty())
         return upn;
 
@@ -84,11 +84,13 @@ public class GraphUserFinder {
 
     try {
       User u = graph.users().byUserId(userId).get(req -> req.queryParameters.select = SELECT);
-      return u == null ? List.of() : List.of(toSummary(u));
+      return u == null
+          ? Collections.<UserSummary>emptyList()
+          : Collections.singletonList(toSummary(u));
     } catch (ApiException e) {
       Integer status = e.getResponseStatusCode();
       if (status != null && status == 404)
-        return List.of();
+        return Collections.emptyList();
       throw e;
     }
   }
@@ -97,17 +99,22 @@ public class GraphUserFinder {
   private List<UserSummary> filter(String filter, int maxResults) {
     log.debug("AUTO: by-filter {}", filter);
 
-    var page = graph.users().get(req -> {
+    // Keep the original type inference out (Java 8 has no var)
+    com.microsoft.graph.models.UserCollectionResponse page = graph.users().get(req -> {
       req.queryParameters.filter = filter;
       req.queryParameters.top = maxResults;
       req.queryParameters.select = SELECT;
     });
 
-    List<User> users = Objects.requireNonNullElse(page.getValue(), List.of());
-    if (users.isEmpty())
-      return List.of();
+    // Java 8 replacement for Objects.requireNonNullElse(page.getValue(), List.of())
+    List<User> users = (page == null || page.getValue() == null)
+        ? Collections.<User>emptyList()
+        : page.getValue();
 
-    List<UserSummary> out = new ArrayList<>(users.size());
+    if (users.isEmpty())
+      return Collections.emptyList();
+
+    List<UserSummary> out = new ArrayList<UserSummary>(users.size());
     for (User u : users)
       out.add(toSummary(u));
     return out;

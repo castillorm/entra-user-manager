@@ -3,10 +3,12 @@ package com.keyesit.graphcli;
 import com.azure.identity.ClientSecretCredential;
 import com.azure.identity.ClientSecretCredentialBuilder;
 import com.microsoft.graph.serviceclient.GraphServiceClient;
+import com.microsoft.graph.models.Invitation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 
 public class GraphCli {
@@ -15,7 +17,7 @@ public class GraphCli {
 
   public static void main(String[] args) throws Exception {
     try {
-      Path projectDir = Path.of("").toAbsolutePath();
+      Path projectDir = Paths.get("").toAbsolutePath();
       Path configPath = projectDir.resolve("config.ini");
       Path authPath = projectDir.resolve("auth.ini");
       IniConfig auth_ini = IniConfig.load(authPath);
@@ -31,10 +33,16 @@ public class GraphCli {
       GraphServiceClient graph = buildGraphClient(auth_ini);
 
       switch (cfg.mode) {
-        case search -> runSearch(cfg, graph);
-        case delete -> runDelete(cfg, graph);
-        case invite -> runInvite(cfg, config_ini, graph);
-        default -> {
+        case search:
+          runSearch(cfg, graph);
+          break;
+        case delete:
+          runDelete(cfg, graph);
+          break;
+        case invite:
+          runInvite(cfg, config_ini, graph);
+          break;
+        default: {
           System.out.println("Unsupported mode :{}\n try: 'search', 'delete' or 'invite'" + cfg.mode);
           log.warn("Unsupported mode: {}", cfg.mode);
           System.exit(2);
@@ -81,7 +89,7 @@ public class GraphCli {
     System.out.println("  sendInvitationMessage: " + sendMsg);
     System.out.println("======================");
     GraphGuestInviter inviter = new GraphGuestInviter(graph);
-    var created = inviter.invite(email, redirectUrl, sendMsg);
+    Invitation created = inviter.invite(email, redirectUrl, sendMsg);
     System.out.println("Invitation created.");
     System.out.println("- invitedUserEmailAddress = "
         + safe(created.getInvitedUserEmailAddress()));
@@ -127,13 +135,13 @@ public class GraphCli {
     UserSummary target = matches.get(0);
     GraphUserDeleter deleter = new GraphUserDeleter(graph);
     try {
-      deleter.deleteById(target.id());
+      deleter.deleteById(target.getId());
       System.out.println("Delete completed.");
-      log.warn("RESULT status=SUCCESS deletedUserId={}", safe(target.id()));
+      log.warn("RESULT status=SUCCESS deletedUserId={}", safe(target.getId()));
     } catch (Exception e) {
       System.out.println("Delete failed. No changes made beyond attempted delete.");
       System.out.println("ERROR: " + e.getMessage());
-      log.error("RESULT status=FAILED deletedUserId={} error={}", safe(target.id()), e.toString(), e);
+      log.error("RESULT status=FAILED deletedUserId={} error={}", safe(target.getId()), e.toString(), e);
       System.exit(3);
     }
   }
@@ -143,15 +151,15 @@ public class GraphCli {
     System.out.println("Matches: " + users.size());
     for (UserSummary u : users) {
       System.out.println("========");
-      StringBuilder sb = new StringBuilder(safe("id = " + u.id() + "\n"));
-      sb.append("name = " + u.displayName() + "\n");
-      sb.append("upn = " + u.userPrincipalName() + "\n");
-      sb.append("mail = " + u.mail() + "\n");
-      sb.append("userType = " + u.userType() + "\n");
-      if (u.externalUserState() != null) {
-        sb.append("InviteState = " + u.externalUserState() + "\n");
+      StringBuilder sb = new StringBuilder(safe("id = " + u.getId() + "\n"));
+      sb.append("name = " + u.getDisplayName() + "\n");
+      sb.append("upn = " + u.getUserPrincipalName() + "\n");
+      sb.append("mail = " + u.getMail() + "\n");
+      sb.append("userType = " + u.getUserType() + "\n");
+      if (u.getExternalUserState() != null) {
+        sb.append("InviteState = " + u.getExternalUserState() + "\n");
       }
-      sb.append("acountEnabled = " + u.accountEnabled());
+      sb.append("acountEnabled = " + u.getAccountEnabled());
       ;
       System.out.println(sb);
     }

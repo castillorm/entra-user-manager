@@ -40,6 +40,7 @@ public final class IniConfig {
   // ---------- accessors ----------
 
   /** Returns value or exits with a friendly error if missing/blank. */
+
   public String get(String section, String key) {
     String v = getRaw(section, key);
     if (v == null) {
@@ -47,7 +48,7 @@ public final class IniConfig {
           "\n  file: " + source.toAbsolutePath());
     }
     v = stripQuotes(v.trim());
-    if (v.isBlank()) {
+    if (v.trim().isEmpty()) { // Java 8 replacement for isBlank()
       die("Config value must not be blank: " + section + "." + key +
           "\n  file: " + source.toAbsolutePath());
     }
