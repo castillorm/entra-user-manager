@@ -1,0 +1,214 @@
+<project name="RadiantOne" default="buildjars" basedir=".">
+  <description>
+    RadiantOne Custom build file
+  </description>
+
+  <!-- set global properties for this build -->
+  <property name="base" location="." />
+
+  <path id="classpath.default">
+    <pathelement path="${classpath}" />
+    <fileset dir="${base}/../lib">
+      <include name="**/*.jar" />
+    </fileset>
+    <fileset dir="${base}/lib">
+      <include name="**/*.jar" />
+    </fileset>
+  </path>
+    <!-- include compiled fidsync classes -->
+    <pathelement location="${base}/fidsync/classes" />
+    <!-- junit console launcher -->
+    <pathelement location="${junit.jar}" />
+  </path>
+
+
+  <!-- JUnit test support -->
+  <property name="test.src" location="${base}/test/src/test/java" />
+  <property name="test.classes" location="${base}/test-classes" />
+  <property name="vds.server.home" location="${base}/../vds_server" />
+
+  <path id="classpath.test">
+    <path refid="classpath.default" />
+    <!-- include compiled fidsync classes -->
+    <pathelement location="${base}/fidsync/classes" />
+    <!-- junit console launcher -->
+    <pathelement location="${junit.jar}" />
+  </path>
+
+  <!-- =========================
+       FAST INNER-LOOP TARGETS
+       ========================= -->
+
+  <target name="clean" description="Clean incremental build outputs">
+    <delete dir="${base}/fidsync/classes" />
+    <delete dir="${test.classes}" />
+    <delete dir="${base}/tmp/classes" />
+  </target>
+
+  <target name="compilefidsync" description="Compile only the fid sync source code (incremental)">
+    <!-- Keep classes dir to enable incremental compilation -->
+    <mkdir dir="${base}/fidsync/classes" />
+
+    <javac destdir="${base}/fidsync/classes"
+           memorymaximumsize="1024m"
+           fork="false"
+           includeantruntime="false"
+           debug="true">
+      <compilerarg value="-Xlint:-options" />
+      <compilerarg value="-proc:none" />
+      <src path="${base}/src" />
+      <include name="com/rli/scripts/fidsync/**/*.java" />
+      <include name="com/rli/custom_code/**/*.java" />
+      <classpath refid="classpath.default" />
+    </javac>
+  </target>
+
+  <target name="compiletests" depends="compilefidsync" description="Compile JUnit tests (incremental)">
+    <!-- Keep classes dir to enable incremental compilation -->
+    <mkdir dir="${test.classes}" />
+
+    <javac destdir="${test.classes}"
+           fork="false"
+           includeantruntime="false"
+           debug="true">
+      <compilerarg value="-Xlint:-options" />
+      <compilerarg value="-proc:none" />
+      <src path="${test.src}" />
+      <classpath refid="classpath.test" />
+    </javac>
+  </target>
+
+  <!-- Default tag to run if not provided: current -->
+  <property name="test.tag" value="current" />
+
+  <target name="test" depends="compiletests" description="Run JUnit tests (tag-filtered)">
+    <java classname="org.junit.platform.console.ConsoleLauncher" fork="true" failonerror="true">
+      <jvmarg value="-Dlog4j.configurationFile=resources/log4j2.xml" />
+
+      <arg value="execute" />
+
+      <classpath>
+        <path refid="classpath.test" />
+        <pathelement location="${test.classes}" />
+      </classpath>
+
+      <!-- Run only the selected tag -->
+      <arg value="--include-tag" />
+      <arg value="${test.tag}" />
+
+      <arg value="--scan-classpath" />
+      <arg value="--details=tree" />
+    </java>
+  </target>
+
+  <!-- =========================
+       ORIGINAL BUILD TARGETS
+       ========================= -->
+
+  <target name="compile" description="compile the source">
+    <!-- Create a new classes directory for the compiled classes -->
+    <mkdir dir="${base}/classes" />
+
+    <!-- Compile the java code from ${base}/src into ${build}/classes -->
+    <javac destdir="${base}/classes" memorymaximumsize="1024m" fork="true">
+      <src path="${base}/src" />
+      <exclude name="com/rli/scripts/sync/*.java" />
+      <classpath refid="classpath.default" />
+    </javac>
+
+    <!-- Copy all the resource files as it is not done by the compiler -->
+    <copy todir="${base}/classes" includeEmptyDirs="true">
+      <fileset dir="${base}/src">
+        <include name="**/*.properties" />
+        <include name="**/*.gif" />
+        <include name="**/*.jpg" />
+      </fileset>
+    </copy>
+  </target>
+
+  <!-- Build metadata only when producing jars -->
+  <target name="bumpbuild" description="Update build metadata">
+    <propertyfile file="${base}/build.txt" comment="RadiantOne custom project build properties">
+      <entry key="Author" value="Ant" />
+      <entry key="Version" type="int" default="4200" operation="+" pattern="0000" />
+      <entry key="Date" type="date" value="now" />
+    </propertyfile>
+  </target>
+
+  <target name="buildjars" depends="compile,bumpbuild" description="generate the distribution">
+    <mkdir dir="${base}" />
+
+    <!-- Build customobjects.jar file -->
+    <jar jarfile="${base}/lib/customobjects.jar" basedir="${base}/classes">
+      <include name="com/rli/scripts/customobjects/**/*.*" />
+      <include name="com/rli/scripts/hooks/**/*.*" />
+    </jar>
+
+    <!-- Build intercept.jar file -->
+    <jar jarfile="${base}/lib/intercept.jar" basedir="${base}/classes">
+      <include name="com/rli/scripts/intercept/**/*.*" />
+    </jar>
+
+    <!-- Build fidsync.jar file -->
+    <jar jarfile="${base}/lib/fidsync.jar" basedir="${base}/classes">
+      <include name="com/rli/scripts/fidsync/**/*.*" />
+    </jar>
+
+    <!-- Build sync.jar file -->
+    <jar jarfile="${base}/lib/sync.jar" basedir="${base}/classes">
+      <include name="com/rli/scripts/sync/**/*.*" />
+    </jar>
+
+    <!-- Build changeEventConvertors.jar file -->
+    <jar jarfile="${base}/lib/changeEventConvertors.jar" basedir="${base}/classes">
+      <include name="com/rli/scripts/changeEventConvertors/**/*.*" />
+    </jar>
+  </target>
+
+  <target name="buildfidsync" depends="compilefidsync,bumpbuild" description="Generate the fidsync.jar">
+    <mkdir dir="${base}" />
+    <jar jarfile="${base}/lib/fidsync.jar" basedir="${base}/fidsync/classes">
+      <include name="com/rli/scripts/fidsync/**/*.*" />
+      <include name="com/rli/custom_code/*.*" />
+    </jar>
+  </target>
+
+  <target name="buildinterceptjar" depends="compile,bumpbuild" description="Generate the intercept.jar">
+    <mkdir dir="${base}" />
+    <jar jarfile="${base}/lib/intercept.jar" basedir="${base}/classes">
+      <include name="com/rli/scripts/intercept/**/*.*" />
+    </jar>
+  </target>
+
+  <target name="compileSubset" description="Compiles a specific subset of packages/classes">
+    <!-- fail immediately if no set of package/classes specified -->
+    <fail message="Nothing to compile. Property &quot;classesToCompile&quot; has no value.">
+      <condition>
+        <or>
+          <equals arg1="${classesToCompile}" arg2="" />
+          <not>
+            <isset property="classesToCompile" />
+          </not>
+        </or>
+      </condition>
+    </fail>
+
+    <echo message="Preparing to compile: ${classesToCompile}" />
+
+    <!-- Create a temporary classes directory for the compiled classes -->
+    <delete dir="${base}/tmp/classes" />
+    <mkdir dir="${base}/tmp/classes" />
+
+    <!-- Compile the java code  -->
+    <javac destdir="${base}/tmp/classes" memorymaximumsize="1024m" fork="true">
+      <compilerarg value="-Xlint:-options" />
+      <src path="${base}/src" />
+      <include name="${classesToCompile}" />
+      <classpath refid="classpath.default" />
+    </javac>
+
+    <delete dir="${base}/tmp/classes" />
+  </target>
+
+</project>
+
