@@ -8,19 +8,13 @@
 
   <path id="classpath.default">
     <pathelement path="${classpath}" />
-    <fileset dir="${base}/../lib">
+    <fileset dir="${base}/rlib">
       <include name="**/*.jar" />
     </fileset>
     <fileset dir="${base}/lib">
       <include name="**/*.jar" />
     </fileset>
   </path>
-    <!-- include compiled fidsync classes -->
-    <pathelement location="${base}/fidsync/classes" />
-    <!-- junit console launcher -->
-    <pathelement location="${junit.jar}" />
-  </path>
-
 
   <!-- JUnit test support -->
   <property name="test.src" location="${base}/test/src/test/java" />
